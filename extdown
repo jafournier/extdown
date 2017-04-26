@@ -1,0 +1,132 @@
+#! /bin/bash
+
+show_help(){
+cat << DELIM
+extdown [URL] [-d DIRECTORYPATH ] [-r URLROOT ] [-e EXTENTION]
+Read URL and get all links to files with extention EXTENTION.
+Try to figure out the full URL of the files (Use URLROOT for tricky cases), download and download and save all the files in DIRECTORYPATH.
+This routine requires curl.
+-h display this help
+-d DIRECTORYPATH five path to the directory where pdfls will be stored, 
+                 the defautl is the working directory.
+-r URLROOT sometimes we need to provide a different urlroot to extract 
+           pdfs
+-e EXTENTION 'pdf' or 'txt' ,... The default is pdf
+DELIM
+}
+
+url=""
+dirpath=""
+urlroot=""
+ext="pdf"
+
+if [ "$#" == "0" ];then
+   show_help
+   exit
+fi
+
+
+while (($#)) ; 
+do
+    case $1 in
+    -h) 
+        show_help
+        exit
+        ;;
+    -d) 
+        dirpath=$2
+        shift 2
+        ;;
+    -r) 
+        rootpath=$2
+        shift 2
+        ;;
+    -e) 
+        ext=$2
+        shift 2
+        ;;
+    *) 
+        url=$1
+        shift 
+        ;;
+    esac
+done 
+
+
+
+# first make sure that urlroot has the right format
+if [ "$urlroot" == '' ];then
+    case $url in
+    *.html|*.shtml)
+        urlroot=`expr $url : '\(.*\)/.*.[html\|shtml]'`
+        ;;
+    */)
+        urlroot=`expr $url : '\(.*\)/'`
+        ;;
+    esac
+else
+    case $urlroot in
+    */)
+        urlroot=`expr $urlroot : '\(.*\)/'`
+        ;;
+    esac
+fi
+
+# second make sure that dirpath has the right format
+case $dirpath in 
+''|'.')
+    dirpath=$PWD
+    ;;
+/*)
+    ;;
+*)
+    dirpath=$PWD/$dirpath
+esac
+
+if [ ! -d "$dirpath" ]; then
+    echo $dirpath does not exist please use a valid folder
+    exit 0
+fi
+
+#echo $url #DEBUG
+#echo $dirpath #DEBUG
+#echo $urlroot #DEBUG
+
+testvar=$(curl $url | sed -n -e "s/\(.*\)href=\"[ ]*\([^ ]*\).${ext}[ ]*\"\(.*\)/\2.$ext/p")
+
+for i in $testvar
+do
+ echo $i # DEBUG
+if [[ "$i" == *'/'* ]] ; then
+    #pdfname=`expr "$i" : '.*/\([^/]*.pdf\)'`
+    pdfname=`expr "$i" : ".*/\([^/]*.${ext}\)"`
+    # echo $pdfname # DEBUG
+else
+    pdfname=$i
+fi
+
+case $i in
+http*)
+    #echo http detected # DEBUG
+    echo $i '->' $dirpath/$pdfname # DEBUG
+    curl $i -o $dirpath/$pdfname
+    ;;
+/*)
+    #echo / detected # DEBUG
+    echo $urlroot$i '->' $dirpath/$pdfname # DEBUG
+    curl $urlroot$i -o $dirpath/$pdfname
+    ;;
+../*)
+    #echo ../ detected # DEBUG
+    tempurlroot=`expr "$urlroot" : '\(.*\)/[^/]*'`
+    iexpr=`expr "$urlroot" : '\.\./\(.*\)'`
+    echo $tempurlroot/$i '->' $dirpath/$pdfname # DEBUG
+    curl $tempurlroot/$i -o $dirpath/$pdfname
+    ;;
+*)
+    #echo OTHER # DEBUG
+    echo $urlroot/$i '->' $dirpath/$pdfname # DEBUG
+    curl $urlroot/$i -o $dirpath/$pdfname
+    ;;
+esac
+done
